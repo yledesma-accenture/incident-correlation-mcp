@@ -4,6 +4,7 @@ import com.capsula.mcp.incidentcorrelationmcp.loader.LogLoader;
 import com.capsula.mcp.incidentcorrelationmcp.model.SystemEvent;
 import com.capsula.mcp.incidentcorrelationmcp.repository.EventRepository;
 import com.capsula.mcp.incidentcorrelationmcp.service.CorrelationService;
+import com.capsula.mcp.incidentcorrelationmcp.validation.ToolArgumentValidator;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
@@ -141,42 +142,56 @@ public class IncidentMcpServer {
                                 .build()
                         )
                 .callHandler((exchange, request) -> {
-                            String timestamp = (String) request.arguments().get("timestamp");
-                            int minutesBefore = ((Number) request.arguments().get("minutesBefore")).intValue();
-                            int minutesAfter = ((Number) request.arguments().get("minutesAfter")).intValue();
+                            try {
+                                String timestamp = ToolArgumentValidator.requiereString(request.arguments(), "timestamp");
+                                int minutesBefore = ToolArgumentValidator.requiereInteger(request.arguments(), "minutesBefore");
+                                int minutesAfter = ToolArgumentValidator.requiereInteger(request.arguments(), "minutesAfter");
 
-                            LocalDateTime dateTime = LocalDateTime.parse(timestamp);
+                                if (minutesBefore < 0 || minutesAfter < 0) {
+                                    throw new IllegalArgumentException("Minutes before and after must be non-negative");
+                                }
 
-                            var foundEvents = eventRepository.findEventsAround(dateTime, minutesBefore, minutesAfter);
+                                LocalDateTime dateTime = LocalDateTime.parse(timestamp);
 
-                            String result;
+                                var foundEvents = eventRepository.findEventsAround(dateTime, minutesBefore, minutesAfter);
 
-                            if(foundEvents.isEmpty()) {
-                                result = "No events found between " + dateTime.minusMinutes(minutesBefore) + " and " + dateTime.plusMinutes(minutesAfter);
-                            } else {
-                                result = "Events found: " +
-                                        foundEvents.size() + "\n" +
-                                        "Time window: " + dateTime.minusMinutes(minutesBefore) + " - " + dateTime.plusMinutes(minutesAfter) + "\n" +
-                                        "Events:\n" +
-                                        foundEvents.stream()
-                                        .map(event -> "%s | %s | %s | %s | %s".formatted(
-                                                event.id(),
-                                                event.timestamp(),
-                                                event.service(),
-                                                event.severity(),
-                                                event.message()
-                                        ))
-                                        .collect(Collectors.joining("\n"));
+                                String result;
+
+                                if (foundEvents.isEmpty()) {
+                                    result = "No events found between " + dateTime.minusMinutes(minutesBefore) + " and " + dateTime.plusMinutes(minutesAfter);
+                                } else {
+                                    result = "Events found: " +
+                                            foundEvents.size() + "\n" +
+                                            "Time window: " + dateTime.minusMinutes(minutesBefore) + " - " + dateTime.plusMinutes(minutesAfter) + "\n" +
+                                            "Events:\n" +
+                                            foundEvents.stream()
+                                                    .map(event -> "%s | %s | %s | %s | %s".formatted(
+                                                            event.id(),
+                                                            event.timestamp(),
+                                                            event.service(),
+                                                            event.severity(),
+                                                            event.message()
+                                                    ))
+                                                    .collect(Collectors.joining("\n"));
+                                }
+
+                                return McpSchema.CallToolResult.builder()
+                                        .content(
+                                                List.of(
+                                                        McpSchema.TextContent.builder(result).build()
+                                                )
+                                        ).build();
+                            } catch (IllegalArgumentException e) {
+                                return McpSchema.CallToolResult.builder()
+                                        .content(
+                                                List.of(
+                                                        McpSchema.TextContent.builder(e.getMessage()).build()
+                                                )
+                                        ).build();
                             }
-
-                            return McpSchema.CallToolResult.builder()
-                                    .content(
-                                            List.of(
-                                                    McpSchema.TextContent.builder(result).build()
-                                            )
-                                    ).build();
                         })
                 .build();
+
 
         var searchEventsTool = McpServerFeatures.SyncToolSpecification
                 .builder()
@@ -186,30 +201,39 @@ public class IncidentMcpServer {
                         .build()
                 )
                 .callHandler((exchange, request) -> {
-                    String service = (String) request.arguments().get("service");
-                    String severity = (String) request.arguments().get("severity");
-                    String text = (String) request.arguments().get("text");
+                    try {
+                        String service = ToolArgumentValidator.optionalString(request.arguments(),"service");
+                        String severity = ToolArgumentValidator.optionalString(request.arguments(),"severity");
+                        String text = ToolArgumentValidator.optionalString(request.arguments(),"text");
 
-                    var foundEvents = eventRepository.search(service, severity, text);
+                        var foundEvents = eventRepository.search(service, severity, text);
 
-                    String result = foundEvents.isEmpty()
-                            ? "No events found"
-                            : foundEvents.stream()
-                            .map(event -> "%s | %s | %s | %s | %s".formatted(
-                                                event.id(),
-                                                event.timestamp(),
-                                                event.service(),
-                                                event.severity(),
-                                                event.message()
-                                        ))
-                                        .collect(Collectors.joining("\n"));
+                        String result = foundEvents.isEmpty()
+                                ? "No events found"
+                                : foundEvents.stream()
+                                .map(event -> "%s | %s | %s | %s | %s".formatted(
+                                        event.id(),
+                                        event.timestamp(),
+                                        event.service(),
+                                        event.severity(),
+                                        event.message()
+                                ))
+                                .collect(Collectors.joining("\n"));
 
-                    return McpSchema.CallToolResult.builder()
-                            .content(
-                                    List.of(
-                                            McpSchema.TextContent.builder(result).build()
-                                    )
-                            ).build();
+                        return McpSchema.CallToolResult.builder()
+                                .content(
+                                        List.of(
+                                                McpSchema.TextContent.builder(result).build()
+                                        )
+                                ).build();
+                    } catch (IllegalArgumentException e) {
+                        return McpSchema.CallToolResult.builder()
+                                .content(
+                                        List.of(
+                                                McpSchema.TextContent.builder(e.getMessage()).build()
+                                        )
+                                ).build();
+                    }
                 })
                 .build();
 
@@ -221,10 +245,14 @@ public class IncidentMcpServer {
                         .build()
                 )
                 .callHandler((exchange, request) -> {
-                    String eventId = (String) request.arguments().get("eventId");
-                    int windowMinutes = ((Number) request.arguments().get("windowMinutes")).intValue();
-
                     try {
+                        String eventId = ToolArgumentValidator.requiereString(request.arguments(),"eventId");
+                        int windowMinutes = ToolArgumentValidator.requiereInteger(request.arguments(),"windowMinutes");
+
+                        if (windowMinutes < 0 ) {
+                            throw new IllegalArgumentException("Minutes before and after must be non-negative");
+                        }
+
                         var correlatedResults = correlationService.findCorrelatedEvent(eventId, windowMinutes);
 
                         String result;
@@ -258,17 +286,15 @@ public class IncidentMcpServer {
                                     .collect(Collectors.joining("\n----------------------------\n"));
                         }
 
-                            return McpSchema.CallToolResult.builder()
-                                    .content(
-                                            List.of(
-                                                    McpSchema.TextContent.builder(result).build()
-                                            )
-                                    ).build();
-
+                        return McpSchema.CallToolResult.builder()
+                                .content(
+                                        List.of(
+                                                McpSchema.TextContent.builder(result).build()
+                                        )
+                                ).build();
 
                     } catch (IllegalArgumentException e) {
                         return McpSchema.CallToolResult.builder()
-                                .isError(true)
                                 .content(
                                         List.of(
                                                 McpSchema.TextContent.builder(e.getMessage()).build()
