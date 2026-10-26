@@ -282,12 +282,18 @@ Analiza los eventos cercanos a un evento origen y devuelve posibles correlacione
 
 #### Criterios de correlación
 
-Actualmente el score considera factores como:
+El score se calcula sumando estos pesos para cada evento candidato:
 
-- proximidad temporal;
-- mismo servicio;
-- severidad del evento;
-- referencias entre servicios dentro de los mensajes.
+| Señal evaluada | Puntos | Motivo del peso |
+|---|---|---|
+| Mismo servicio que el evento original | +40 | Es la señal con mayor peso porque ambos eventos perteneces al mismo componente. |
+| Diferencia tempora de hasta 30 segundos | +30 | Una cercania mayor aumenta la posibilidad de que los eventos formen parte del mismo episodio. |
+| Diferencia temporal de más de 30 y hasta 120 segundos | +20 | Sigue siendo cercana, pero es una señal temporal menos fuerte. |
+| Severidad `ERROR` en el candidato | + 20 | Indica mayor relevancia operativa que un evento informativo. |
+| Severidad `WARNING` en el candidato | +10 | Aporta relevancia, aunque menor que un error. |
+| Un mensaje contiene al otro, sin estar vacio | +20 | La similitud textual puede indicar una causa o referencia compartida; se puntúa una sola vez. |
+
+Los pesos son **heurísticos** expresan una prioridad inicial de las señales y no están calibrados con un conjunto de incidentes etiquetados. El máximo posible es de 110 puntos. Se devuelven candidatos con score mayor que cero, ordenador de mayor a menor. 
 
 El score representa una **correlación potencial**.
 
